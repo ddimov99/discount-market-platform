@@ -1,0 +1,8 @@
+.venv/
+*.csv
+*.json
+*.jsonl
+*.jl
+.scrapy/
+__pycache__/
+*.py[cod]
