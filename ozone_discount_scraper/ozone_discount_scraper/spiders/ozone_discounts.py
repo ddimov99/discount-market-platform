@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import UTC, datetime
-from typing import Iterable
+from typing import Any, Iterable
 
 import scrapy
 
@@ -26,6 +27,7 @@ class OzoneDiscountsSpider(scrapy.Spider):
         start_urls: str | None = None,
         min_discount: str | int | float = 1,
         max_pages: str | int = 1,
+        discounted_only: str | bool = True,
         only_in_stock: str | bool = True,
         only_last_units: str | bool = False,
         include_code_discounts: str | bool = False,
@@ -36,6 +38,7 @@ class OzoneDiscountsSpider(scrapy.Spider):
         self.start_urls = self._split_urls(configured_urls) or self.default_start_urls
         self.min_discount = float(min_discount)
         self.max_pages = int(max_pages)
+        self.discounted_only = self._as_bool(discounted_only)
         self.only_in_stock = self._as_bool(only_in_stock)
         self.only_last_units = self._as_bool(only_last_units)
         self.include_code_discounts = self._as_bool(include_code_discounts)
@@ -45,10 +48,17 @@ class OzoneDiscountsSpider(scrapy.Spider):
             yield scrapy.Request(url, callback=self.parse, meta={"page_number": 1})
 
     def parse(self, response: scrapy.http.Response) -> Iterable[OzoneDiscountItem | scrapy.Request]:
-        for article in response.css("article.product-item"):
-            item = self._parse_article(article, response.url)
-            if item is not None:
-                yield item
+        embedded_products = self._extract_embedded_products(response.text)
+        if embedded_products:
+            for product in embedded_products:
+                item = self._parse_product(product, response.url)
+                if item is not None:
+                    yield item
+        else:
+            for article in response.css("article.product-item"):
+                item = self._parse_article(article, response.url)
+                if item is not None:
+                    yield item
 
         page_number = int(response.meta.get("page_number", 1))
         if self.max_pages and page_number >= self.max_pages:
@@ -66,6 +76,67 @@ class OzoneDiscountsSpider(scrapy.Spider):
                 callback=self.parse,
                 meta={"page_number": page_number + 1},
             )
+
+    def _parse_product(
+        self,
+        product: dict[str, Any],
+        source_url: str,
+    ) -> OzoneDiscountItem | None:
+        old_price = self._as_float(product.get("unit_price"))
+        sale_price = self._as_float(product.get("unit_sale_price"))
+        if sale_price is None:
+            return None
+
+        discount_percent = None
+        if old_price and old_price > sale_price:
+            discount_percent = round((old_price - sale_price) / old_price * 100, 2)
+        if discount_percent is None:
+            if self.discounted_only:
+                return None
+            discount_percent = 0.0
+        if discount_percent < self.min_discount:
+            return None
+
+        custom = product.get("custom") if isinstance(product.get("custom"), dict) else {}
+        labels = self._product_labels(custom)
+        discount_label = f"-{discount_percent:g}%" if discount_percent > 0 else None
+        if discount_label:
+            labels = [discount_label, *labels]
+        code_discount = any(CODE_LABEL_FRAGMENT in label.casefold() for label in labels)
+        if code_discount and not self.include_code_discounts:
+            return None
+
+        stock = self._as_int(product.get("stock"))
+        if self.only_in_stock and stock is not None and stock <= 0:
+            return None
+
+        is_last_units = any(LAST_UNITS_LABEL in label for label in labels)
+        if self.only_last_units and not is_last_units:
+            return None
+
+        taxonomy = self._taxonomy_values(product.get("taxonomy"))
+        return OzoneDiscountItem(
+            scraped_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            source_url=source_url,
+            product_id=self._string_value(product.get("id")),
+            title=self._string_value(product.get("name")),
+            product_url=self._string_value(product.get("url")),
+            image_url=self._string_value(product.get("product_image_url")),
+            brand=self._product_brand(product, custom),
+            currency=self._string_value(product.get("currency")) or "EUR",
+            old_price=old_price,
+            sale_price=sale_price,
+            discount_percent=discount_percent,
+            discount_label=discount_label,
+            labels=labels,
+            stock=stock,
+            stock_status=self._stock_status(stock),
+            is_last_units=is_last_units,
+            category=taxonomy[0] if len(taxonomy) > 0 else None,
+            subcategory=taxonomy[1] if len(taxonomy) > 1 else None,
+            sales_type=self._string_value(custom.get("sales_type")),
+            attribute_set=self._string_value(custom.get("attribute_set")),
+        )
 
     def _parse_article(
         self,
@@ -88,7 +159,13 @@ class OzoneDiscountsSpider(scrapy.Spider):
         if discount_percent is None and old_price and sale_price and old_price > sale_price:
             discount_percent = round((old_price - sale_price) / old_price * 100, 2)
 
-        if discount_percent is None or discount_percent < self.min_discount:
+        if sale_price is None:
+            return None
+        if discount_percent is None:
+            if self.discounted_only:
+                return None
+            discount_percent = 0.0
+        if discount_percent < self.min_discount:
             return None
         if code_discount and not self.include_code_discounts:
             return None
@@ -113,6 +190,7 @@ class OzoneDiscountsSpider(scrapy.Spider):
             image_url=article.css("img.product-img::attr(data-original)").get()
             or article.css("img.product-img::attr(src)").get()
             or self._extract_string(script, "product_image_url"),
+            brand=self._article_brand(article, script),
             currency=self._extract_string(script, "currency") or "EUR",
             old_price=old_price,
             sale_price=sale_price,
@@ -127,6 +205,145 @@ class OzoneDiscountsSpider(scrapy.Spider):
             sales_type=self._extract_custom_string(script, "sales_type"),
             attribute_set=self._extract_custom_string(script, "attribute_set"),
         )
+
+    @staticmethod
+    def _extract_embedded_products(html: str) -> list[dict[str, Any]]:
+        match = re.search(
+            r"const\s+products\s*=\s*JSON\.parse\('((?:\\'|[^'])*)'\)",
+            html,
+            re.DOTALL,
+        )
+        if not match:
+            return []
+
+        raw_json = match.group(1).replace("\\'", "'")
+        try:
+            decoded_json = raw_json.encode("utf-8").decode("unicode_escape")
+            products = json.loads(decoded_json)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(products, dict):
+            return []
+
+        return [
+            product
+            for _, product in sorted(products.items(), key=OzoneDiscountsSpider._object_key)
+            if isinstance(product, dict)
+        ]
+
+    @staticmethod
+    def _object_key(item: tuple[Any, Any]) -> tuple[int, int | str]:
+        key = str(item[0])
+        if key.isdigit():
+            return (0, int(key))
+        return (1, key)
+
+    @classmethod
+    def _product_labels(cls, custom: dict[str, Any]) -> list[str]:
+        labels: list[str] = []
+        for key in ("oz_common_promo", "oz_common_accent", "oz_common_kind"):
+            labels.extend(cls._flatten_label_values(custom.get(key)))
+
+        unique_labels: list[str] = []
+        seen = set()
+        for label in labels:
+            normalized = label.casefold()
+            if normalized not in seen:
+                unique_labels.append(label)
+                seen.add(normalized)
+        return unique_labels
+
+    @classmethod
+    def _flatten_label_values(cls, value: Any) -> list[str]:
+        if value is None or value is False:
+            return []
+        if isinstance(value, dict):
+            return [
+                label
+                for _, item in sorted(value.items(), key=cls._object_key)
+                for label in cls._flatten_label_values(item)
+            ]
+        if isinstance(value, (list, tuple)):
+            return [label for item in value for label in cls._flatten_label_values(item)]
+        if isinstance(value, str):
+            cleaned = cls._clean(value)
+            return [cleaned] if cleaned else []
+        return []
+
+    @classmethod
+    def _taxonomy_values(cls, value: Any) -> list[str]:
+        if isinstance(value, dict):
+            return [
+                cleaned
+                for _, item in sorted(value.items(), key=cls._object_key)
+                if isinstance(item, str) and (cleaned := cls._clean(item))
+            ]
+        if isinstance(value, (list, tuple)):
+            return [
+                cleaned
+                for item in value
+                if isinstance(item, str) and (cleaned := cls._clean(item))
+            ]
+        return []
+
+    @classmethod
+    def _product_brand(cls, product: dict[str, Any], custom: dict[str, Any]) -> str | None:
+        for value in (
+            product.get("brand"),
+            product.get("manufacturer"),
+            custom.get("brand"),
+            custom.get("manufacturer"),
+            custom.get("product_brand"),
+            custom.get("oz_brand"),
+        ):
+            if cleaned := cls._string_value(value):
+                return cleaned
+        return None
+
+    @classmethod
+    def _article_brand(cls, article: scrapy.Selector, script: str) -> str | None:
+        return (
+            cls._clean(article.css(".brand::text").get())
+            or cls._extract_string(script, "brand")
+            or cls._extract_string(script, "manufacturer")
+            or cls._extract_custom_string(script, "product_brand")
+            or cls._extract_custom_string(script, "oz_brand")
+        )
+
+    @classmethod
+    def _string_value(cls, value: Any) -> str | None:
+        if isinstance(value, str):
+            return cls._clean(value)
+        return None
+
+    @staticmethod
+    def _as_float(value: Any) -> float | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.replace(",", "."))
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _as_int(value: Any) -> int | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return None
+        return None
 
     @staticmethod
     def _split_urls(value: str | None) -> list[str]:
