@@ -111,6 +111,30 @@ class ScrapyProcessRunnerTest {
         assertThat(result.errorMessage()).isEqualTo("Scrapy timed out after 1 seconds");
     }
 
+    @Test
+    void returnsClearFailureWhenScrapyExecutableIsMissing() throws IOException {
+        Path baseDir = tempDir.resolve("scrapers");
+        Path outputDir = tempDir.resolve("out");
+        Path projectDir = baseDir.resolve("ozone_discount_scraper");
+        Path missingExecutable = tempDir.resolve("missing-scrapy");
+        Files.createDirectories(projectDir);
+        ScrapyProcessRunner runner = new ScrapyProcessRunner(
+                runtimeProperties(baseDir, outputDir, missingExecutable.toString(), 1),
+                fixedClock()
+        );
+
+        ScraperRunResult result = runner.run(scraperConfig(300));
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.exitCode()).isEqualTo(-1);
+        assertThat(result.errorMessage())
+                .contains(
+                        "Failed to start Scrapy for scraper config 'ozone-discounts'",
+                        missingExecutable.toString(),
+                        projectDir.toString()
+                );
+    }
+
     private Path executableScript(String contents) throws IOException {
         Path executable = tempDir.resolve("fake-scrapy");
         Files.writeString(executable, contents);
@@ -146,7 +170,7 @@ class ScrapyProcessRunnerTest {
                 baseDir,
                 outputDir,
                 new ScraperRuntimeProperties.Scrapy(executable, maxPages),
-                new ScraperRuntimeProperties.Scheduler(60000)
+                new ScraperRuntimeProperties.Scheduler(60000, 3)
         );
     }
 

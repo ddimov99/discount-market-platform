@@ -36,7 +36,7 @@ class ArdesProductsSpider(scrapy.Spider):
     allowed_domains = ["ardes.bg", "www.ardes.bg"]
     default_start_urls = DEFAULT_START_URLS
     custom_settings = {
-        "USER_AGENT": "OffersScraper/1.0",
+        "USER_AGENT": os.getenv("ARDES_USER_AGENT", "curl/8.7.1"),
     }
 
     def __init__(

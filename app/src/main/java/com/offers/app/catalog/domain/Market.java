@@ -38,12 +38,6 @@ public class Market {
     @Column(nullable = false)
     private boolean active = true;
 
-    @Column(name = "scrape_interval_minutes", nullable = false)
-    private int scrapeIntervalMinutes = 720;
-
-    @Column(name = "crawl_delay_seconds", nullable = false)
-    private int crawlDelaySeconds = 1;
-
     @Column(name = "last_scraped_at")
     private LocalDateTime lastScrapedAt;
 

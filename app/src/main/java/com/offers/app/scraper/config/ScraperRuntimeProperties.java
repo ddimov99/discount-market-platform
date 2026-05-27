@@ -28,6 +28,6 @@ public record ScraperRuntimeProperties(
     public record Scrapy(String executable, int maxPages) {
     }
 
-    public record Scheduler(long fixedDelayMs) {
+    public record Scheduler(long fixedDelayMs, int maxParallelRuns) {
     }
 }

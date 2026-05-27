@@ -43,12 +43,13 @@ public class ScrapyProcessRunner implements ScraperRunner {
     @Override
     public ScraperRunResult run(ScraperConfig config) {
         Path outputFile = outputFile(config);
+        Path projectDir = runtimeProperties.resolveProjectDir(config.getProjectKey());
 
         try {
             Files.createDirectories(runtimeProperties.outputDir());
 
             Process process = new ProcessBuilder(buildCommand(config, outputFile))
-                    .directory(runtimeProperties.resolveProjectDir(config.getProjectKey()).toFile())
+                    .directory(projectDir.toFile())
                     .start();
 
             CompletableFuture<String> stdout = readAsync(process.getInputStream());
@@ -79,7 +80,7 @@ public class ScrapyProcessRunner implements ScraperRunner {
             Thread.currentThread().interrupt();
             return failed(outputFile, "Scrapy execution was interrupted");
         } catch (IOException ex) {
-            return failed(outputFile, ex.getMessage());
+            return failed(outputFile, startFailureMessage(config, projectDir, ex));
         }
     }
 
@@ -158,5 +159,15 @@ public class ScrapyProcessRunner implements ScraperRunner {
                 "",
                 Objects.requireNonNullElse(errorMessage, "Scrapy execution failed")
         );
+    }
+
+    private String startFailureMessage(ScraperConfig config, Path projectDir, IOException ex) {
+        return "Failed to start Scrapy for scraper config '%s' using executable '%s' in '%s': %s"
+                .formatted(
+                        config.getSlug(),
+                        runtimeProperties.scrapy().executable(),
+                        projectDir,
+                        Objects.requireNonNullElse(ex.getMessage(), ex.getClass().getSimpleName())
+                );
     }
 }

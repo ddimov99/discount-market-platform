@@ -2,8 +2,6 @@ package com.offers.app.catalog.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
@@ -60,10 +58,6 @@ public class ScraperConfig {
     @Column(nullable = false)
     private boolean enabled = true;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "runner_type", nullable = false, length = 32)
-    private ScraperRunnerType runnerType = ScraperRunnerType.SCRAPY;
-
     @Column(name = "project_key", nullable = false, length = 160)
     private String projectKey;
 
@@ -77,10 +71,6 @@ public class ScraperConfig {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> arguments = new LinkedHashMap<>();
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "output_format", nullable = false, length = 32)
-    private ScraperOutputFormat outputFormat = ScraperOutputFormat.JSONL;
 
     @Column(name = "interval_minutes", nullable = false)
     private int intervalMinutes;

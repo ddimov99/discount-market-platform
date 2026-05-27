@@ -1,5 +1,6 @@
 package com.offers.app;
 
+import com.offers.app.catalog.repository.CategoryAliasRepository;
 import com.offers.app.catalog.repository.CategoryRepository;
 import com.offers.app.catalog.repository.MarketRepository;
 import com.offers.app.catalog.repository.OfferRepository;
@@ -27,6 +28,9 @@ class AppApplicationTests {
 
 	@MockitoBean
 	private CategoryRepository categoryRepository;
+
+	@MockitoBean
+	private CategoryAliasRepository categoryAliasRepository;
 
 	@MockitoBean
 	private MarketRepository marketRepository;

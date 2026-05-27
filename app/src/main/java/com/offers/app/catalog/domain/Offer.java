@@ -77,6 +77,12 @@ public class Offer {
     @Column(length = 160)
     private String brand;
 
+    @Column(name = "source_category", length = 255)
+    private String sourceCategory;
+
+    @Column(name = "source_subcategory", length = 255)
+    private String sourceSubcategory;
+
     @Column(nullable = false, length = 3)
     private String currency = "EUR";
 

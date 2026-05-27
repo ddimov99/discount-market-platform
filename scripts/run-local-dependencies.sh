@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="${ROOT_DIR}/app"
 SCRAPER_PROJECT_DIR="${SCRAPER_PROJECT_DIR:-${ROOT_DIR}/ozone_discount_scraper}"
 SCRAPER_VENV_DIR="${SCRAPER_VENV_DIR:-${SCRAPER_PROJECT_DIR}/.venv}"
 SCRAPY_EXECUTABLE="${SCRAPY_EXECUTABLE:-${SCRAPER_VENV_DIR}/bin/scrapy}"
@@ -11,22 +10,19 @@ SCRAPERS_FIXED_DELAY_MS="${SCRAPERS_FIXED_DELAY_MS:-60000}"
 SCRAPERS_SCRAPY_MAX_PAGES="${SCRAPERS_SCRAPY_MAX_PAGES:-1}"
 SCRAPERS_SCHEDULER_MAX_PARALLEL_RUNS="${SCRAPERS_SCHEDULER_MAX_PARALLEL_RUNS:-3}"
 SPRING_PROFILE="${SPRING_PROFILE:-local}"
-# Local test default. Use scrapers.scrapy.max-pages=1000 for deploy/full crawls.
-SKIP_DOCKER=false
+
 SKIP_VENV=false
-SMOKE_SCRAPER=false
 RESET_DB=false
 
 usage() {
     cat <<EOF
-Usage: scripts/run-local.sh [options]
+Usage: scripts/run-local-dependencies.sh [options]
 
-Starts the local discount-market app with the Ozone Scrapy runner wired in.
+Starts only the local dependencies needed before launching the Spring app from IntelliJ IDEA.
+The Spring Boot app itself is not started by this script.
 
 Options:
-  --skip-docker      Do not start/wait for Postgres via docker compose.
   --skip-venv        Do not create/install the Scrapy Python virtualenv.
-  --smoke-scraper    Run a one-page Scrapy JSONL smoke test before the app.
   --reset-db         Delete the local Docker Postgres volume before startup.
   --help             Show this help.
 
@@ -45,16 +41,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --skip-docker)
-            SKIP_DOCKER=true
-            shift
-            ;;
         --skip-venv)
             SKIP_VENV=true
-            shift
-            ;;
-        --smoke-scraper)
-            SMOKE_SCRAPER=true
             shift
             ;;
         --reset-db)
@@ -105,15 +93,6 @@ setup_scrapy_venv() {
 }
 
 start_postgres() {
-    if [[ "${SKIP_DOCKER}" == true ]]; then
-        if [[ "${RESET_DB}" == true ]]; then
-            echo "--reset-db cannot be used together with --skip-docker" >&2
-            exit 2
-        fi
-        log "Skipping docker compose Postgres startup"
-        return
-    fi
-
     require_command docker
 
     if [[ "${RESET_DB}" == true ]]; then
@@ -139,52 +118,29 @@ start_postgres() {
     exit 1
 }
 
-run_scraper_smoke_test() {
-    if [[ "${SMOKE_SCRAPER}" != true ]]; then
-        return
-    fi
-
-    mkdir -p "${SCRAPERS_OUTPUT_DIR}"
-    local output_file="${SCRAPERS_OUTPUT_DIR}/manual-smoke-$(date '+%Y%m%d%H%M%S').jsonl"
-
-    log "Running Scrapy smoke test"
-    (
-        cd "${SCRAPER_PROJECT_DIR}"
-        "${SCRAPY_EXECUTABLE}" crawl ozone_discounts \
-            -a start_urls=https://www.ozone.bg/ \
-            -a min_discount=1 \
-            -a max_pages=1 \
-            -a only_in_stock=true \
-            -O "${output_file}"
-    )
-
-    log "Scrapy smoke output: ${output_file}"
-}
-
-run_app() {
-    require_command java
+print_idea_settings() {
     mkdir -p "${SCRAPERS_OUTPUT_DIR}"
 
-    log "Launching Spring Boot app"
-    log "Scrapy executable: ${SCRAPY_EXECUTABLE}"
-    log "Scrape output dir: ${SCRAPERS_OUTPUT_DIR}"
-    log "Scrapy max pages per start URL: ${SCRAPERS_SCRAPY_MAX_PAGES}"
-    log "Max parallel scraper runs: ${SCRAPERS_SCHEDULER_MAX_PARALLEL_RUNS}"
-    log "Open API after startup: http://localhost:8080/api/offers"
+    cat <<EOF
 
-    local app_args
-    app_args="--spring.profiles.active=${SPRING_PROFILE}"
-    app_args="${app_args} --scrapers.base-dir=${ROOT_DIR}"
-    app_args="${app_args} --scrapers.output-dir=${SCRAPERS_OUTPUT_DIR}"
-    app_args="${app_args} --scrapers.scrapy.executable=${SCRAPY_EXECUTABLE}"
-    app_args="${app_args} --scrapers.scrapy.max-pages=${SCRAPERS_SCRAPY_MAX_PAGES}"
-    app_args="${app_args} --scrapers.scheduler.fixed-delay-ms=${SCRAPERS_FIXED_DELAY_MS}"
-    app_args="${app_args} --scrapers.scheduler.max-parallel-runs=${SCRAPERS_SCHEDULER_MAX_PARALLEL_RUNS}"
+Local dependencies are ready.
 
-    (cd "${APP_DIR}" && ./gradlew bootRun --args="${app_args}")
+Use this IntelliJ IDEA run/debug configuration for the app:
+
+  Main class:
+    com.offers.app.AppApplication
+
+  Active profiles:
+    ${SPRING_PROFILE}
+
+  Program arguments:
+    --spring.profiles.active=${SPRING_PROFILE} --scrapers.base-dir=${ROOT_DIR} --scrapers.output-dir=${SCRAPERS_OUTPUT_DIR} --scrapers.scrapy.executable=${SCRAPY_EXECUTABLE} --scrapers.scrapy.max-pages=${SCRAPERS_SCRAPY_MAX_PAGES} --scrapers.scheduler.fixed-delay-ms=${SCRAPERS_FIXED_DELAY_MS} --scrapers.scheduler.max-parallel-runs=${SCRAPERS_SCHEDULER_MAX_PARALLEL_RUNS}
+
+  Useful local URLs:
+    App after IDEA starts it: http://localhost:8080/api/offers
+EOF
 }
 
 setup_scrapy_venv
 start_postgres
-run_scraper_smoke_test
-run_app
+print_idea_settings

@@ -12,7 +12,7 @@ class ScraperRuntimePropertiesTest {
             Path.of("/Users/dimitardimov/Desktop/scraping"),
             Path.of("/tmp/discount-market-scrapes"),
             new ScraperRuntimeProperties.Scrapy("scrapy", 1000),
-            new ScraperRuntimeProperties.Scheduler(60000)
+            new ScraperRuntimeProperties.Scheduler(60000, 3)
     );
 
     @Test

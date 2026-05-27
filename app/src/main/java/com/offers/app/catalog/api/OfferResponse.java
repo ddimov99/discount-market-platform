@@ -12,6 +12,8 @@ public record OfferResponse(
         String productUrl,
         String imageUrl,
         String brand,
+        String sourceCategory,
+        String sourceSubcategory,
         String currency,
         BigDecimal oldPrice,
         BigDecimal salePrice,

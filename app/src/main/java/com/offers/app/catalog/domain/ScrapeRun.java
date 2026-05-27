@@ -73,10 +73,6 @@ public class ScrapeRun {
     @Column(name = "error_message", columnDefinition = "text")
     private String errorMessage;
 
-    public ScrapeRun(Market market) {
-        this.market = market;
-    }
-
     public ScrapeRun(ScraperConfig scraperConfig) {
         this.scraperConfig = scraperConfig;
         this.market = scraperConfig.getMarket();

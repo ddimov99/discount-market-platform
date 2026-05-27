@@ -38,14 +38,29 @@ public class CatalogQueryService {
     }
 
     public List<OfferResponse> getOffers() {
-        return offerRepository.findPublicOffers()
+        return getOffers(null, null);
+    }
+
+    public List<OfferResponse> getOffers(Long categoryId, String brand) {
+        String resolvedBrand = blankToNull(brand);
+        List<Offer> offers;
+        if (categoryId != null) {
+            offers = offerRepository.findPublicOffersByCategoryId(categoryId, resolvedBrand);
+        } else if (resolvedBrand != null) {
+            offers = offerRepository.findPublicOffersByBrand(resolvedBrand);
+        } else {
+            offers = offerRepository.findPublicOffers();
+        }
+
+        return offers
                 .stream()
+                .filter(offer -> offer.getCategory() != null)
                 .map(this::toOfferResponse)
                 .toList();
     }
 
     public List<CategoryResponse> getCategories() {
-        return categoryRepository.findAllByOrderByNameAsc()
+        return categoryRepository.findAllByActiveTrueOrderBySortOrderAscNameAsc()
                 .stream()
                 .map(this::toCategoryResponse)
                 .toList();
@@ -65,6 +80,8 @@ public class CatalogQueryService {
                 offer.getProductUrl(),
                 offer.getImageUrl(),
                 offer.getBrand(),
+                offer.getSourceCategory(),
+                offer.getSourceSubcategory(),
                 offer.getCurrency(),
                 offer.getOldPrice(),
                 offer.getSalePrice(),
@@ -85,9 +102,10 @@ public class CatalogQueryService {
         return new CategoryResponse(
                 category.getId(),
                 category.getName(),
-                category.getSlug(),
                 parent == null ? null : parent.getId(),
-                parent == null ? null : parent.getSlug()
+                parent == null ? null : parent.getName(),
+                category.getSortOrder(),
+                category.isActive()
         );
     }
 
@@ -109,7 +127,20 @@ public class CatalogQueryService {
         if (category == null) {
             return null;
         }
-        return new OfferCategoryResponse(category.getId(), category.getName(), category.getSlug());
+        Category parent = category.getParent();
+        return new OfferCategoryResponse(
+                category.getId(),
+                category.getName(),
+                parent == null ? null : parent.getId(),
+                parent == null ? null : parent.getName()
+        );
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private List<String> labels(String[] labels) {

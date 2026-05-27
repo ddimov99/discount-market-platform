@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -21,8 +22,14 @@ import org.hibernate.annotations.CreationTimestamp;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "categories")
-public class Category {
+@Table(
+        name = "category_aliases",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_category_aliases_category_normalized",
+                columnNames = {"category_id", "normalized_alias"}
+        )
+)
+public class CategoryAlias {
 
     @Id
     @Setter(AccessLevel.NONE)
@@ -31,16 +38,17 @@ public class Category {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
-            name = "parent_id",
-            foreignKey = @ForeignKey(name = "fk_categories_parent_id")
+            name = "category_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_category_aliases_category_id")
     )
-    private Category parent;
+    private Category category;
 
-    @Column(nullable = false, length = 160)
-    private String name;
+    @Column(name = "normalized_alias", nullable = false, length = 255)
+    private String normalizedAlias;
 
-    @Column(name = "sort_order", nullable = false)
-    private int sortOrder = 0;
+    @Column(nullable = false, length = 50)
+    private String source = "generated";
 
     @Column(nullable = false)
     private boolean active = true;
@@ -50,13 +58,9 @@ public class Category {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public Category(String name, Category parent) {
-        this(name, parent, 0);
-    }
-
-    public Category(String name, Category parent, int sortOrder) {
-        this.name = name;
-        this.parent = parent;
-        this.sortOrder = sortOrder;
+    public CategoryAlias(Category category, String normalizedAlias, String source) {
+        this.category = category;
+        this.normalizedAlias = normalizedAlias;
+        this.source = source;
     }
 }

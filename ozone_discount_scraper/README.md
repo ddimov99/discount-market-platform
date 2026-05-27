@@ -76,6 +76,12 @@ Options:
 When the spider is launched by the Spring app, `max_pages` is supplied from
 `scrapers.scrapy.max-pages` instead of the database scraper arguments.
 
+The Spring app keeps spider URLs, arguments, intervals, and timeouts in the
+`scraper_configs` table. Only the on/off switch is exposed in
+`app/src/main/resources/application.properties` through
+`scrapers.spiders.[<config-slug>].enabled`. If no property exists for a slug,
+the app falls back to the database `enabled` value.
+
 You can also set `OZONE_START_URLS` instead of passing `start_url`:
 
 ```bash
@@ -99,9 +105,9 @@ scrapy crawl technomarket_products \
 ```
 
 Technopolis is seeded with only the smartphones and mobile phones category for
-now. Its `robots.txt` disallows generic crawlers, so the database config is
-created disabled until you have permission or intentionally change crawler
-policy.
+now. Its `robots.txt` disallows generic crawlers, so
+`SCRAPERS_TECHNOPOLIS_PRODUCTS_ENABLED` defaults to `false` until you have
+permission or intentionally change crawler policy.
 
 Ardes allows generic crawlers in `robots.txt`, but rejects Scrapy's default
 user agent. The Ardes spider uses a transparent `OffersScraper/1.0` user agent.
