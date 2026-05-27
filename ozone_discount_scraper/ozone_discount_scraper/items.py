@@ -8,6 +8,7 @@ class OzoneDiscountItem(scrapy.Item):
     title = scrapy.Field()
     product_url = scrapy.Field()
     image_url = scrapy.Field()
+    brand = scrapy.Field()
     currency = scrapy.Field()
     old_price = scrapy.Field()
     sale_price = scrapy.Field()
